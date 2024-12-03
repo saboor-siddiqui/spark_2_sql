@@ -30,7 +30,7 @@ Transform Spark DataFrame operations into SQL with support for:
 Clone the repository and build using Maven:
 
 ```bash
-git clone https://github.com/yourusername/Spark2SQL.git
+git clone git@github.com:saboor-siddiqui/spark_2_sql.git
 cd Spark2SQL
 mvn clean install
 ```
