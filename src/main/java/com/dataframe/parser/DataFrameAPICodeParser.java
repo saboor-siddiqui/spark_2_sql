@@ -79,6 +79,9 @@ public class DataFrameAPICodeParser {
 
             Map<String, Object> limitOp = createOperation("limit", "value", limit);
             currentNode = new DataFrameNode("limit", limitOp, currentNode);
+            if (root == null) {
+                root = currentNode;
+            }
         }
 
         return root;
