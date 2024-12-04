@@ -3,7 +3,6 @@ package com.dataframe.converter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 import com.dataframe.parser.DataFrameAPICodeParser;
 
@@ -13,6 +12,11 @@ public class DataFrameToSQLConverter {
     private final List<String> selectColumns;
     private final List<Join> joins;
     private final List<String> whereClauses;
+    private String groupByClause;
+    private String havingClause;
+    private String orderByClause;
+    private String limitClause;
+    private boolean isDistinct;
     
     // Join class to encapsulate join logic
     private static class Join {
@@ -35,10 +39,11 @@ public class DataFrameToSQLConverter {
         @Override
         public String toString() {
             String joinTypeStr = joinType.toUpperCase();
-            if (joinTypeStr.equals("LEFT") || joinTypeStr.equals("RIGHT")) {
-                joinTypeStr += " OUTER";
+            if (joinTypeStr.equals("INNER JOIN")) {
+                joinTypeStr = "INNER"; 
             }
-            return String.format("%s JOIN `%s` ON %s", joinTypeStr, table, condition);
+            // Remove backticks around joined table name
+            return String.format("%s JOIN %s ON %s", joinTypeStr, table, condition);
         }
     }
     
@@ -69,35 +74,99 @@ public class DataFrameToSQLConverter {
     }
     
     public String convert(List<Map<String, Object>> operations) {
-        sqlQuery.setLength(0); // Clear previous query
-        selectColumns.clear();
-        joins.clear();
-        whereClauses.clear();
+        if (operations == null || operations.isEmpty()) {
+            throw new IllegalArgumentException("Operations list cannot be empty");
+        }
+
+        resetState();
         
+        boolean hasFromClause = false;
+        for (Map<String, Object> op : operations) {
+            String type = (String) op.get("type");
+            if ("from".equals(type)) {
+                hasFromClause = true;
+                break;
+            }
+        }
+        
+        if (!hasFromClause) {
+            throw new IllegalArgumentException("Missing FROM clause");
+        }
+
         // Process operations
         for (Map<String, Object> op : operations) {
             String type = (String) op.get("type");
             switch (type) {
                 case "select":
-                    selectColumns.addAll(((List<String>) op.get("columns")).stream()
-                        .map(this::sanitizeIdentifier)
-                        .collect(Collectors.toList()));
+                    selectColumns.addAll(((List<String>) op.get("columns")));
                     break;
                 case "from":
-                    fromClause = String.format(" FROM `%s`", 
-                        sanitizeIdentifier((String) op.get("table")));
+                    fromClause = String.format(" FROM `%s`", op.get("table"));
                     break;
                 case "join":
                     appendJoin(op);
                     break;
                 case "where":
-                    whereClauses.add(sanitizeCondition((String) op.get("condition")));
+                    whereClauses.add((String) op.get("condition"));
+                    break;
+                case "groupBy":
+                    groupByClause = String.join(", ", (List<String>) op.get("columns"));
+                    break;
+                case "having":
+                    havingClause = (String) op.get("condition");
+                    break;
+                case "orderBy":
+                    orderByClause = String.join(", ", (List<String>) op.get("columns"));
+                    break;
+                case "limit":
+                    limitClause = String.valueOf(op.get("value"));
+                    break;
+                case "distinct":
+                    isDistinct = true;
+                    break;
+                case "window":
+                    handleWindowFunction(op);
                     break;
             }
         }
+
+        buildSQLQuery();
+        return sqlQuery.toString();
+    }
+
+    private void handleWindowFunction(Map<String, Object> op) {
+        String function = (String) op.get("function");
+        String column = (String) op.get("column");
+        List<String> partitionBy = (List<String>) op.get("partitionBy");
+        List<String> orderBy = (List<String>) op.get("orderBy");
+        String alias = (String) op.get("alias");
+
+        String windowFunc = String.format("%s(%s) OVER (PARTITION BY %s ORDER BY %s) AS %s",
+            function, column,
+            String.join(", ", partitionBy),
+            String.join(", ", orderBy),
+            alias);
         
-        // Build query
+        selectColumns.add(windowFunc);
+    }
+
+    private void resetState() {
+        sqlQuery.setLength(0); // Clear previous query
+        selectColumns.clear();
+        joins.clear();
+        whereClauses.clear();
+        groupByClause = null;
+        havingClause = null;
+        orderByClause = null;
+        limitClause = null;
+        isDistinct = false;
+    }
+
+    private void buildSQLQuery() {
         sqlQuery.append("SELECT ");
+        if (isDistinct) {
+            sqlQuery.append("DISTINCT ");
+        }
         sqlQuery.append(String.join(", ", selectColumns));
         sqlQuery.append(fromClause);
         
@@ -111,8 +180,26 @@ public class DataFrameToSQLConverter {
             sqlQuery.append(" WHERE ")
                    .append(String.join(" AND ", whereClauses));
         }
-        
-        return sqlQuery.toString();
+
+        // Append group by clause
+        if (groupByClause != null) {
+            sqlQuery.append(" GROUP BY ").append(groupByClause);
+        }
+
+        // Append having clause
+        if (havingClause != null) {
+            sqlQuery.append(" HAVING ").append(havingClause);
+        }
+
+        // Append order by clause
+        if (orderByClause != null) {
+            sqlQuery.append(" ORDER BY ").append(orderByClause);
+        }
+
+        // Append limit clause
+        if (limitClause != null) {
+            sqlQuery.append(" LIMIT ").append(limitClause);
+        }
     }
 
     public static void main(String[] args) {
