@@ -1,6 +1,5 @@
 package com.dataframe.parser;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -10,79 +9,81 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class DataFrameAPICodeParser {
-    public List<Map<String, Object>> parse(String dataframeCode) {
-        List<Map<String, Object>> operations = new ArrayList<>();
-        
+    public DataFrameNode parse(String dataframeCode) {
+        DataFrameNode root = null;
+        DataFrameNode currentNode = null;
+
         // Example: Parse "df.groupBy("id").count()"
         if (dataframeCode.matches(".*\\.groupBy\\(\".*\"\\)\\.count\\(\\).*")) {
             String tableName = extractTableName(dataframeCode);
             String columnName = extractColumnName(dataframeCode, "groupBy");
-            
-            operations.add(createOperation("from", "table", tableName));
-            operations.add(createOperation("select", "columns", Arrays.asList(columnName, "COUNT(*)")));
-            operations.add(createOperation("groupBy", "columns", Arrays.asList(columnName)));
+
+            Map<String, Object> fromOp = createOperation("from", "table", tableName);
+            root = new DataFrameNode("from", fromOp, null);
+            currentNode = root;
+
+            Map<String, Object> selectOp = createOperation("select", "columns", Arrays.asList(columnName, "COUNT(*)"));
+            currentNode = new DataFrameNode("select", selectOp, currentNode);
+
+            Map<String, Object> groupByOp = createOperation("groupBy", "columns", Arrays.asList(columnName));
+            currentNode = new DataFrameNode("groupBy", groupByOp, currentNode);
         }
-        
+
         // Add more parsing logic for other DataFrame API calls as needed
         if (dataframeCode.matches(".*\\.select\\(\".*\"\\).*")) {
             String tableName = extractTableName(dataframeCode);
             List<String> columns = extractColumns(dataframeCode, "select");
-            
-            operations.add(createOperation("from", "table", tableName));
-            operations.add(createOperation("select", "columns", columns));
+
+            Map<String, Object> fromOp = createOperation("from", "table", tableName);
+            root = new DataFrameNode("from", fromOp, null);
+            currentNode = root;
+
+            Map<String, Object> selectOp = createOperation("select", "columns", columns);
+            currentNode = new DataFrameNode("select", selectOp, currentNode);
         }
-        
+
         if (dataframeCode.matches(".*\\.filter\\(\".*\"\\).*")) {
-            String tableName = extractTableName(dataframeCode);
             String condition = extractCondition(dataframeCode, "filter");
-            
-            operations.add(createOperation("from", "table", tableName));
-            operations.add(createOperation("where", "condition", condition));
+
+            Map<String, Object> filterOp = createOperation("filter", "condition", condition);
+            currentNode = new DataFrameNode("filter", filterOp, currentNode);
         }
-        
+
         if (dataframeCode.matches(".*\\.join\\(\".*\"\\).*")) {
-            String tableName = extractTableName(dataframeCode);
             String joinTable = extractJoinTable(dataframeCode);
             String joinCondition = extractJoinCondition(dataframeCode);
-            String joinType = extractJoinType(dataframeCode); // Add this line
-            
-            operations.add(createOperation("from", "table", tableName));
-            Map<String, Object> joinOp = new HashMap<>();
-            joinOp.put("type", "join");
-            joinOp.put("joinType", joinType); // Use extracted join type instead of hardcoding
-            joinOp.put("table", joinTable);
+            String joinType = extractJoinType(dataframeCode);
+
+            Map<String, Object> joinOp = createOperation("join", "table", joinTable);
             joinOp.put("condition", joinCondition);
-            operations.add(joinOp);
+            joinOp.put("joinType", joinType);
+            currentNode = new DataFrameNode("join", joinOp, currentNode);
         }
-        
+
         if (dataframeCode.matches(".*\\.orderBy\\(\".*\"\\).*")) {
-            String tableName = extractTableName(dataframeCode);
             List<String> orderByColumns = extractColumns(dataframeCode, "orderBy");
-            
-            operations.add(createOperation("from", "table", tableName));
-            operations.add(createOperation("orderBy", "columns", orderByColumns));
+
+            Map<String, Object> orderByOp = createOperation("orderBy", "columns", orderByColumns);
+            currentNode = new DataFrameNode("orderBy", orderByOp, currentNode);
         }
-        
+
         if (dataframeCode.matches(".*\\.distinct\\(\\).*")) {
-            String tableName = extractTableName(dataframeCode);
             List<String> columns = extractColumns(dataframeCode, "select");
-            
-            operations.add(createOperation("from", "table", tableName));
-            operations.add(createOperation("select", "columns", columns));
-            operations.add(createOperation("distinct", "columns", columns));
+
+            Map<String, Object> distinctOp = createOperation("distinct", "columns", columns);
+            currentNode = new DataFrameNode("distinct", distinctOp, currentNode);
         }
-        
+
         if (dataframeCode.matches(".*\\.limit\\(\\d+\\).*")) {
-            String tableName = extractTableName(dataframeCode);
             int limit = extractLimit(dataframeCode);
-            
-            operations.add(createOperation("from", "table", tableName));
-            operations.add(createOperation("limit", "value", limit));
+
+            Map<String, Object> limitOp = createOperation("limit", "value", limit);
+            currentNode = new DataFrameNode("limit", limitOp, currentNode);
         }
-        
-        return operations;
+
+        return root;
     }
-    
+
     private String extractTableName(String code) {
         Pattern pattern = Pattern.compile("df\\.(select|join)\\(.*?\\).*?");
         Matcher matcher = pattern.matcher(code);
@@ -99,7 +100,7 @@ public class DataFrameAPICodeParser {
         }
         return ""; // Return empty if no table found
     }
-    
+
     private String extractColumnName(String code, String operation) {
         Pattern pattern = Pattern.compile("\\." + operation + "\\(\"(.*?)\"\\)");
         Matcher matcher = pattern.matcher(code);
@@ -108,7 +109,7 @@ public class DataFrameAPICodeParser {
         }
         return "";
     }
-    
+
     private List<String> extractColumns(String code, String operation) {
         Pattern pattern = Pattern.compile("\\." + operation + "\\((.*?)\\)");
         Matcher matcher = pattern.matcher(code);
@@ -120,7 +121,7 @@ public class DataFrameAPICodeParser {
         }
         return Collections.emptyList();
     }
-    
+
     private String extractCondition(String code, String operation) {
         Pattern pattern = Pattern.compile("\\." + operation + "\\(\"(.*?)\"\\)");
         Matcher matcher = pattern.matcher(code);
@@ -129,7 +130,7 @@ public class DataFrameAPICodeParser {
         }
         return "";
     }
-    
+
     private String extractJoinTable(String code) {
         Pattern pattern = Pattern.compile("\\.join\\(\"(.*?)\"");
         Matcher matcher = pattern.matcher(code);
@@ -138,7 +139,7 @@ public class DataFrameAPICodeParser {
         }
         return "";
     }
-    
+
     private String extractJoinCondition(String code) {
         Pattern pattern = Pattern.compile("\\.join\\(\".*?\",\\s*\"(.*?)\"\\)");
         Matcher matcher = pattern.matcher(code);
@@ -147,7 +148,7 @@ public class DataFrameAPICodeParser {
         }
         return "";
     }
-    
+
     private int extractLimit(String code) {
         Pattern pattern = Pattern.compile("\\.limit\\((\\d+)\\)");
         Matcher matcher = pattern.matcher(code);
@@ -156,7 +157,7 @@ public class DataFrameAPICodeParser {
         }
         return 0;
     }
-    
+
     private Map<String, Object> createOperation(String type, String key, Object value) {
         Map<String, Object> operation = new HashMap<>();
         operation.put("type", type);
@@ -168,9 +169,8 @@ public class DataFrameAPICodeParser {
         Pattern pattern = Pattern.compile("\\.join\\(\".*?\",\\s*\".*?\",\\s*\"(.*?)\"\\)");
         Matcher matcher = pattern.matcher(code);
         if (matcher.find()) {
-            String joinType = matcher.group(1).toUpperCase();
-            return joinType.equals("INNER") ? "INNER" : joinType + " OUTER";
+            return matcher.group(1);
         }
-        return "INNER"; // default join type
+        return "INNER"; // Default join type
     }
 }
