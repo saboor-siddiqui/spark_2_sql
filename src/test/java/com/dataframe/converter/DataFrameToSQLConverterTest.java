@@ -134,14 +134,16 @@ public class DataFrameToSQLConverterTest {
 
     @Test
     public void testValidation() {
-        assertThrows(IllegalArgumentException.class, () -> {
+        IllegalArgumentException exception1 = assertThrows(IllegalArgumentException.class, () -> {
             converter.convert(new ArrayList<>());
         }, "Should throw exception for empty operations");
+        assertEquals("Operations list cannot be empty", exception1.getMessage());
 
-        assertThrows(IllegalArgumentException.class, () -> {
+        IllegalArgumentException exception2 = assertThrows(IllegalArgumentException.class, () -> {
             operations.add(createOperation("select", "columns", List.of("col1")));
             converter.convert(operations);
         }, "Should throw exception for missing FROM clause");
+        assertEquals("Missing FROM clause", exception2.getMessage());
     }
 
     private Map<String, Object> createOperation(String type, String key, Object value) {
