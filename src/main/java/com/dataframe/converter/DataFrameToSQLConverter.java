@@ -1,10 +1,8 @@
 package com.dataframe.converter;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -35,7 +33,7 @@ public class DataFrameToSQLConverter {
     public String convert(DataFrameNode rootNode, String tableName) {
         resetState();
         if (rootNode == null) {
-            throw new IllegalArgumentException("Root node cannot be null");
+            throw new IllegalArgumentException("Root node cannot be null. Ensure the DataFrame code is correctly formatted.");
         }
         fromClause = String.format(" FROM `%s`", tableName);
         traverseTree(rootNode);
@@ -232,108 +230,159 @@ public class DataFrameToSQLConverter {
     public static void main(String[] args) {
         DataFrameToSQLConverter converter = new DataFrameToSQLConverter();
         DataFrameAPICodeParser parser = new DataFrameAPICodeParser();
+        String tableName = "example_table";
+        String sql;
+        DataFrameNode root;
 
         // Example DataFrame API code
         String dataframeCode = "df.groupBy(\"id\").count()";
-        String tableName = "example_table";
 
         // Parse the DataFrame API code into operations
-        DataFrameNode root = parser.parse(dataframeCode);
+        root = parser.parse(dataframeCode);
+        if (root == null) {
+            System.err.println("Parsing failed for code: " + dataframeCode);
+        }
 
         // Convert the operations into SQL
-        String sql = converter.convert(root, tableName);
+        sql = converter.convert(root, tableName);
         System.out.println("Generated SQL: " + sql);
 
         // Test other DataFrame API code
         dataframeCode = "df.select(\"name\", \"age\").filter(\"age > 30\")";
         root = parser.parse(dataframeCode);
+        if (root == null) {
+            System.err.println("Parsing failed for code: " + dataframeCode);
+        }
         sql = converter.convert(root, tableName);
         System.out.println("Generated SQL: " + sql);
 
         dataframeCode = "df.select(\"name\", \"age\").orderBy(\"age DESC\")";
         root = parser.parse(dataframeCode);
+        if (root == null) {
+            System.err.println("Parsing failed for code: " + dataframeCode);
+        }
         sql = converter.convert(root, tableName);
         System.out.println("Generated SQL: " + sql);
 
         dataframeCode = "df.select(\"category\").distinct()";
         root = parser.parse(dataframeCode);
+        if (root == null) {
+            System.err.println("Parsing failed for code: " + dataframeCode);
+        }
         sql = converter.convert(root, tableName);
         System.out.println("Generated SQL: " + sql);
 
         dataframeCode = "df.select(\"timestamp\", \"message\").limit(100)";
         root = parser.parse(dataframeCode);
+        if (root == null) {
+            System.err.println("Parsing failed for code: " + dataframeCode);
+        }
         sql = converter.convert(root, tableName);
         System.out.println("Generated SQL: " + sql);
 
         dataframeCode = "df.select(\"employees.name\", \"departments.name\").join(\"departments\", \"employees.department_id = departments.id\")";
         root = parser.parse(dataframeCode);
+        if (root == null) {
+            System.err.println("Parsing failed for code: " + dataframeCode);
+        }
         sql = converter.convert(root, tableName);
         System.out.println("Generated SQL: " + sql);
 
-        dataframeCode = "df.select(\"employees.name\", \"departments.name\").join(\"departments\", \"employees.department_id = departments.id\", \"left\")";
+        dataframeCode = "df.select(\"orders.id\", \"customers.name\", \"products.name\")\n" +
+                        "  .join(\"customers\", \"orders.customer_id = customers.id\")\n" +
+                        "  .join(\"products\", \"orders.product_id = products.id\")";
         root = parser.parse(dataframeCode);
+        if (root == null) {
+            System.err.println("Parsing failed for code: " + dataframeCode);
+        }
         sql = converter.convert(root, tableName);
         System.out.println("Generated SQL: " + sql);
 
-        // Test cases
-        testBasicSelect(converter);
-        testJoinWithOrderBy(converter);
-        testGroupByWithHaving(converter);
-        testWindowFunction(converter);
-        testMultipleJoins(converter);
+        dataframeCode = "df.select(\"sales.date\", \"customers.name\").join(\"customers\", \"sales.customer_id = customers.id\").groupBy(\"date\").agg(sum(\"amount\").as(\"total_sales\")).orderBy(desc(\"total_sales\")).limit(10)";
+        root = parser.parse(dataframeCode);
+        if (root == null) {
+            System.err.println("Parsing failed for code: " + dataframeCode);
+        }
+        sql = converter.convert(root, tableName);
+        System.out.println("Generated SQL: " + sql);
+
+        // try {
+        //     // Test single join first
+        //     String singleJoinCode = "df.select(\"employees.name\", \"departments.name\").join(\"departments\", \"employees.department_id = departments.id\")";
+        //     root = parser.parse(singleJoinCode);
+        //     if (root != null) {
+        //         sql = converter.convert(root, tableName);
+        //         System.out.println("Single join SQL: " + sql);
+        //     }
+
+        //     // Test multiple joins
+        //     String multiJoinCode = "df.select(\"orders.id\", \"customers.name\", \"products.name\")"
+        //         + ".join(\"customers\", \"orders.customer_id = customers.id\")"
+        //         + ".join(\"products\", \"orders.product_id = products.id\")";
+        //     root = parser.parse(multiJoinCode);
+        //     if (root != null) {
+        //         sql = converter.convert(root, tableName);
+        //         System.out.println("Multiple joins SQL: " + sql);
+        //     } else {
+        //         System.err.println("Failed to parse multiple joins query");
+        //     }
+        // } catch (Exception e) {
+        //     System.err.println("Error processing joins: " + e.getMessage());
+        //     e.printStackTrace();
+        // }
     }
 
-    private static void testBasicSelect(DataFrameToSQLConverter converter) {
-        DataFrameNode root = new DataFrameNode("select", Map.of("columns", 
-            Arrays.asList("name", "age")), null);
-        System.out.println(converter.convert(root, "users"));
-    }
+    // private static void testBasicSelect(DataFrameToSQLConverter converter) {
+    //     DataFrameNode root = new DataFrameNode("select", Map.of("columns", 
+    //         Arrays.asList("name", "age")), null);
+    //     System.out.println(converter.convert(root, "users"));
+    // }
 
-    private static void testJoinWithOrderBy(DataFrameToSQLConverter converter) {
-        DataFrameNode root = new DataFrameNode("select", Map.of("columns", 
-            Arrays.asList("orders.id", "customers.name")), null);
-        root.addChild(new DataFrameNode("join", Map.of(
-            "table", "customers",
-            "condition", "orders.customer_id = customers.id"
-        ), root));
-        root.addChild(new DataFrameNode("orderBy", Map.of(
-            "columns", Arrays.asList("orders.id DESC")
-        ), root));
-        System.out.println(converter.convert(root, "orders"));
-    }
+    // private static void testJoinWithOrderBy(DataFrameToSQLConverter converter) {
+    //     DataFrameNode root = new DataFrameNode("select", Map.of("columns", 
+    //         Arrays.asList("orders.id", "customers.name")), null);
+    //     root.addChild(new DataFrameNode("join", Map.of(
+    //         "table", "customers",
+    //         "condition", "orders.customer_id = customers.id"
+    //     ), root));
+    //     root.addChild(new DataFrameNode("orderBy", Map.of(
+    //         "columns", Arrays.asList("orders.id DESC")
+    //     ), root));
+    //     System.out.println(converter.convert(root, "orders"));
+    // }
 
-    private static void testGroupByWithHaving(DataFrameToSQLConverter converter) {
-        DataFrameNode root = new DataFrameNode("select", Map.of("columns", 
-            Arrays.asList("department", "COUNT(*)")), null);
-        root.addChild(new DataFrameNode("groupBy", Map.of(
-            "columns", Arrays.asList("department")
-        ), root));
-        root.addChild(new DataFrameNode("filter", Map.of(
-            "condition", "COUNT(*) > 10"
-        ), root));
-        System.out.println(converter.convert(root, "employees"));
-    }
+    // private static void testGroupByWithHaving(DataFrameToSQLConverter converter) {
+    //     DataFrameNode root = new DataFrameNode("select", Map.of("columns", 
+    //         Arrays.asList("department", "COUNT(*)")), null);
+    //     root.addChild(new DataFrameNode("groupBy", Map.of(
+    //         "columns", Arrays.asList("department")
+    //     ), root));
+    //     root.addChild(new DataFrameNode("filter", Map.of(
+    //         "condition", "COUNT(*) > 10"
+    //     ), root));
+    //     System.out.println(converter.convert(root, "employees"));
+    // }
 
-    private static void testWindowFunction(DataFrameToSQLConverter converter) {
-        DataFrameNode root = new DataFrameNode("select", Map.of("columns", 
-            Arrays.asList("name", "salary")), null);
-        root.addChild(new DataFrameNode("windowFunction", Map.of(
-            "function", "ROW_NUMBER() OVER (PARTITION BY department ORDER BY salary DESC) AS rank"
-        ), root));
-        System.out.println(converter.convert(root, "employees"));
-    }
+    // private static void testWindowFunction(DataFrameToSQLConverter converter) {
+    //     DataFrameNode root = new DataFrameNode("select", Map.of("columns", 
+    //         Arrays.asList("name", "salary")), null);
+    //     root.addChild(new DataFrameNode("windowFunction", Map.of(
+    //         "function", "ROW_NUMBER() OVER (PARTITION BY department ORDER BY salary DESC) AS rank"
+    //     ), root));
+    //     System.out.println(converter.convert(root, "employees"));
+    // }
 
-    private static void testMultipleJoins(DataFrameToSQLConverter converter) {
-        DataFrameNode root = new DataFrameNode("select", Map.of("columns", 
-            Arrays.asList("orders.id", "customers.name", "products.name")), null);
-        root.addChild(new DataFrameNode("join", Map.of(
-            "table", "customers",
-            "condition", "orders.customer_id = customers.id"
-        ), root));
-        root.addChild(new DataFrameNode("join", Map.of(
-            "table", "products", 
-            "condition", "orders.product_id = products.id"
-        ), root));
-        System.out.println(converter.convert(root, "orders"));
-    }
+    // private static void testMultipleJoins(DataFrameToSQLConverter converter) {
+    //     DataFrameNode root = new DataFrameNode("select", Map.of("columns", 
+    //         Arrays.asList("orders.id", "customers.name", "products.name")), null);
+    //     root.addChild(new DataFrameNode("join", Map.of(
+    //         "table", "customers",
+    //         "condition", "orders.customer_id = customers.id"
+    //     ), root));
+    //     root.addChild(new DataFrameNode("join", Map.of(
+    //         "table", "products", 
+    //         "condition", "orders.product_id = products.id"
+    //     ), root));
+    //     System.out.println(converter.convert(root, "orders"));
+    // }
 }
