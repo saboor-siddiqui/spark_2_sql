@@ -118,14 +118,12 @@ public class DataFrameToSQLConverter {
     }
 
     private void handleFilter(DataFrameNode node) {
-        String condition = (String) node.getDetails().get("condition");
-        // Remove any remaining quotes and normalize
-        condition = condition
-            .replaceAll("\"", "")
-            .replaceAll("sum\\((.*?)\\)", "sum($1)")
-            .replaceAll("desc\\((.*?)\\)", "$1 desc");
-        
-        whereClauses.add(condition);
+        if (node.getDetails() != null && node.getDetails().containsKey("condition")) {
+            String condition = (String) node.getDetails().get("condition");
+            // Clean up the condition and add to whereClauses
+            condition = condition.replaceAll("^\"|\"$", "").trim();
+            whereClauses.add(condition);
+        }
     }
 
     private void handleOrderBy(DataFrameNode node) {

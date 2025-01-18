@@ -17,6 +17,17 @@ object SparkDataFrameExample {
       .agg(sum("amount").as("total_sales"))
       .orderBy(desc("total_sales"))
       .limit(10)
+
+      val result3 = df.select("sales.date", "customers.name") 
+      .join("customers", "sales.customer_id = customers.id")
+      .groupBy("date")
+      .agg(sum("amount").as("total_sales"))
+
+      val result4 = df.select("sales.date", "customers.name") 
+      .join("customers", "sales.customer_id = customers.id")
+      .groupBy("date")
+      .orderBy(desc("total_sales"))
+      .limit(10)
       
   }
 }

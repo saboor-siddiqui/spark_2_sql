@@ -83,10 +83,12 @@ public class DataFrameAPICodeParser {
 
         // Handle .filter("...") or .where("...")
         if (dataframeCode.matches(".*\\.(filter|where)\\(\".*\"\\).*")) {
-            String condition = extractCondition(dataframeCode, "(filter|where)");
-
-            Map<String, Object> filterOp = createOperation("filter", "condition", condition);
-            currentNode = new DataFrameNode("filter", filterOp, currentNode);
+            String condition = extractFilterCondition(dataframeCode);
+            if (condition != null && !condition.isEmpty()) {
+                Map<String, Object> filterOp = new HashMap<>();
+                filterOp.put("condition", condition);
+                currentNode = new DataFrameNode("filter", filterOp, currentNode);
+            }
         }
 
         // Handle .join("table", "condition", optional joinType)
@@ -220,5 +222,17 @@ public class DataFrameAPICodeParser {
             op.put(key, value);
         }
         return op;
+    }
+
+    private String extractFilterCondition(String code) {
+        Pattern pattern = Pattern.compile("\\.(filter|where)\\(\"(.*?)\"\\)");
+        Matcher matcher = pattern.matcher(code);
+        if (matcher.find()) {
+            // Get the actual filter condition from group 2
+            String condition = matcher.group(2);
+            // Clean up the condition
+            return condition.replaceAll("^\"|\"$", "").trim();
+        }
+        return null;
     }
 }

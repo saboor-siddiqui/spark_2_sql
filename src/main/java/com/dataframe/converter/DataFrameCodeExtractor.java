@@ -1,8 +1,12 @@
 package com.dataframe.converter;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -98,13 +102,29 @@ public class DataFrameCodeExtractor {
 
     public static void main(String[] args) throws IOException {
         DataFrameCodeExtractor extractor = new DataFrameCodeExtractor();
-        String filePath = "/Users/saboor/Documents/Projects/Codes/Spark2SQL/SparkDataFrameExample.scala";
-        List<String> sqlQueries = extractor.processFile(filePath);
+        String inputFilePath = "/Users/saboor/Documents/Projects/Codes/Spark2SQL/SparkDataFrameExample.scala";
+        String outputFilePath = "/Users/saboor/Documents/Projects/Codes/Spark2SQL/generated_queries.sql";
         
-        System.out.println("Generated SQL Queries:");
-        for (String sql : sqlQueries) {
-            System.out.println(sql);
-            System.out.println("-------------------");
+        // Create output directory if it doesn't exist
+        File outputFile = new File(outputFilePath);
+        outputFile.getParentFile().mkdirs();
+        
+        List<String> sqlQueries = extractor.processFile(inputFilePath);
+        
+        // Write queries to SQL file
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(outputFile))) {
+            writer.write("-- Generated SQL Queries\n");
+            writer.write("-- Source: " + inputFilePath + "\n");
+            writer.write("-- Generated at: " + LocalDateTime.now() + "\n\n");
+            
+            for (String sql : sqlQueries) {
+                writer.write(sql + ";\n\n");
+                System.out.println("Writing query: " + sql);
+            }
+            
+            System.out.println("\nSQL queries have been written to: " + outputFilePath);
+        } catch (IOException e) {
+            System.err.println("Error writing to SQL file: " + e.getMessage());
         }
     }
 }
