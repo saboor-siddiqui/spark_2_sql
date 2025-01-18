@@ -18,14 +18,5 @@ object SparkDataFrameExample {
       .orderBy(desc("total_sales"))
       .limit(10)
       
-    // Window function
-    val windowSpec = Window
-      .partitionBy("product_id")
-      .orderBy(col("amount").desc)
-      
-    val result3 = df.select("product_id", "amount")
-      .withColumn("rank", rank().over(windowSpec))
-      .filter("rank <= 3")
-      .distinct()
   }
 }

@@ -22,33 +22,68 @@ public class DataFrameCodeExtractor {
 
     public List<String> processFile(String filePath) throws IOException {
         String content = new String(Files.readAllBytes(Paths.get(filePath)));
+        System.out.println("File content read: " + content);
         List<String> operations = extractDataFrameOperations(content);
-        System.out.println("Operations : " + operations);
+        System.out.println("Extracted operations: " + operations);
         return convertOperationsToSQL(operations);
     }
 
     private List<String> extractDataFrameOperations(String content) {
         List<String> operations = new ArrayList<>();
+        
+        // 1. First normalize the content to handle multi-line statements
+        content = content.replaceAll("//.*?\\n", "\n")  // Remove single-line comments
+                        .replaceAll("/\\*.*?\\*/", "")   // Remove multi-line comments
+                        .replaceAll("(?m)^\\s+", "")     // Remove leading whitespace
+                        .trim();
+
+        System.out.println("Normalized content:\n" + content);
+        
+        // 2. Updated regex pattern to capture complete DataFrame chains
         Pattern pattern = Pattern.compile(
-            "val\\s+(\\w+)\\s*=\\s*(\\w+)\\.(.*?)(?=\\s*val\\s+\\w+\\s*=|\\Z)", 
-            Pattern.DOTALL | Pattern.MULTILINE
+            "val\\s+(\\w+)\\s*=\\s*(\\w+)\\.((?:[^\\n]*?\\n?\\s*\\.?)*?)(?=\\s*val|\\s*$)",
+            Pattern.MULTILINE | Pattern.DOTALL
         );
+        
         Matcher matcher = pattern.matcher(content);
         while (matcher.find()) {
-            String operation = matcher.group(2) + "." + matcher.group(3).trim();
-            operations.add(operation);
+            String dfVariable = matcher.group(2);  // Gets 'df'
+            String operation = matcher.group(3);   // Gets everything after df.
+            
+            // Log the raw match for debugging
+            System.out.println("\nFound DataFrame operation:");
+            System.out.println("Variable: " + dfVariable);
+            System.out.println("Raw operation: " + operation);
+            
+            // 3. Clean up the operation string more thoroughly
+            String cleanedOperation = operation
+                .replaceAll("\\s*\\.\\s*", ".")     // Clean spaces around dots
+                .replaceAll("(?m)^\\s+", "")        // Remove leading spaces
+                .replaceAll("\\n\\s*", "")          // Remove newlines and their spaces
+                .replaceAll("\\s+", " ")            // Normalize whitespace
+                .replaceAll("\\s*=\\s*", "=")       // Clean spaces around equals
+                .trim();
+            
+            // 4. Add the cleaned operation to the list
+            operations.add(dfVariable + "." + cleanedOperation);
+            System.out.println("Cleaned operation: " + dfVariable + "." + cleanedOperation);
         }
+        
         return operations;
     }
 
     private List<String> convertOperationsToSQL(List<String> operations) {
         List<String> sqlQueries = new ArrayList<>();
         for (String operation : operations) {
+            System.out.println("Parsing operation: " + operation);
             DataFrameNode parsedNode = parser.parse(operation);
             if (parsedNode != null) {
                 String tableName = extractTableName(operation);
                 String sql = converter.convert(parsedNode, tableName);
                 sqlQueries.add(sql);
+                System.out.println("Generated SQL: " + sql);
+            } else {
+                System.out.println("Failed to parse operation: " + operation);
             }
         }
         return sqlQueries;
