@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 public class DataFrameAPICodeParser {
     public DataFrameNode parse(String dataframeCode) {
@@ -148,40 +149,24 @@ public class DataFrameAPICodeParser {
 
     // Extract aggregator calls like sum("amount").as("total_sales")
     private String extractAgg(String code) {
-        // Basic approach: extract content inside .agg(...)
-        Pattern p = Pattern.compile("\\.agg\\((.*?)\\)");
+        Pattern p = Pattern.compile("\\.agg\\(sum\\(\"(.*?)\"\\)\\.as\\(\"(.*?)\"\\)\\)");
         Matcher m = p.matcher(code);
-        if (!m.find()) return "";
-        // For example: sum("amount").as("total_sales")
-        // Return it as: SUM(amount) AS total_sales for the parser
-        String aggContent = m.group(1).replaceAll("\\s+", "");
-        // This is just a naive example transform
-        // In production, parse carefully (function name, column, alias)
-        // e.g.: sum("amount").as("total_sales") → "SUM(amount) AS total_sales"
-        aggContent = aggContent
-                .replaceAll("(?i)sum\\(\"(.*?)\"\\)", "SUM($1)")
-                .replaceAll("\\.as\\(\"(.*?)\"\\)", " AS $1");
-        return aggContent;
+        if (m.find()) {
+            String column = m.group(1);
+            String alias = m.group(2);
+            return String.format("sum(%s) as %s", column, alias);
+        }
+        return "";
     }
 
     private List<String> extractOrderByColumns(String code) {
-        // Look for orderBy(...) content
-        Pattern pattern = Pattern.compile("\\.orderBy\\((.*?)\\)");
+        Pattern pattern = Pattern.compile("\\.orderBy\\(desc\\(\"(.*?)\"\\)\\)");
         Matcher matcher = pattern.matcher(code);
-        if (!matcher.find()) {
-            return Collections.emptyList();
+        if (matcher.find()) {
+            String column = matcher.group(1);
+            return Arrays.asList(column + " desc");
         }
-        String content = matcher.group(1).trim();
-        // If content is desc("col"), extract the column
-        // e.g. orderBy(desc("total_sales"))
-        Pattern descPattern = Pattern.compile("desc\\(\"(.*?)\"\\)", Pattern.CASE_INSENSITIVE);
-        Matcher descMatcher = descPattern.matcher(content);
-        if (descMatcher.find()) {
-            return Collections.singletonList(descMatcher.group(1) + " DESC");
-        }
-        // else assume it's something like "col DESC"
-        content = content.replaceAll("\"", "");
-        return Arrays.asList(content.split(",\\s*"));
+        return Collections.emptyList();
     }
 
     private String extractTableName(String code) {
@@ -218,9 +203,22 @@ public class DataFrameAPICodeParser {
     }
 
     private Map<String, Object> createOperation(String type, String key, Object value) {
-        Map<String, Object> operation = new HashMap<>();
-        operation.put("type", type);
-        operation.put(key, value);
-        return operation;
+        Map<String, Object> op = new HashMap<>();
+        if ("select".equals(type)) {
+            List<String> columns = (List<String>) value;
+            columns = columns.stream()
+                .map(col -> col.replaceAll("\"", ""))
+                .collect(Collectors.toList());
+            op.put(key, columns);
+        } else if ("orderBy".equals(type)) {
+            List<String> columns = (List<String>) value;
+            columns = columns.stream()
+                .map(col -> col.replaceAll("desc\\(\"(.*?)\"\\)", "$1 desc"))
+                .collect(Collectors.toList());
+            op.put(key, columns);
+        } else {
+            op.put(key, value);
+        }
+        return op;
     }
 }
