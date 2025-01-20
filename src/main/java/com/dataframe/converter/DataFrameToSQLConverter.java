@@ -3,6 +3,7 @@ package com.dataframe.converter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -98,6 +99,18 @@ public class DataFrameToSQLConverter {
                 break;
             case "from":
                 // Skip from node as table name is provided separately
+                break;
+            case "withColumn":
+                Map<String, Object> details = node.getDetails();
+                String newCol = (String) details.get("newColumn");
+                String expr = (String) details.get("expression");
+                selectColumns.add(expr + " AS " + newCol);
+                break;
+            case "withColumnRenamed":
+                Map<String, Object> renameDetails = node.getDetails();
+                String oldCol = (String) renameDetails.get("oldColumn");
+                String newName = (String) renameDetails.get("newColumn");
+                selectColumns.add(oldCol + " AS " + newName);
                 break;
             default:
                 throw new IllegalArgumentException("Unknown node type: " + node.getType());

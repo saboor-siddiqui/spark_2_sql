@@ -82,7 +82,7 @@ public class DataFrameCodeExtractor {
             System.out.println("Parsing operation: " + operation);
             DataFrameNode parsedNode = parser.parse(operation);
             if (parsedNode != null) {
-                String tableName = extractTableName(operation);
+                String tableName = parser.extractTableName(operation);
                 String sql = converter.convert(parsedNode, tableName);
                 sqlQueries.add(sql);
                 System.out.println("Generated SQL: " + sql);
@@ -93,12 +93,6 @@ public class DataFrameCodeExtractor {
         return sqlQueries;
     }
 
-    private String extractTableName(String operation) {
-        if (operation.contains("myDf")) {
-            return "sales";
-        }
-        return "default_table";
-    }
 
     public static void main(String[] args) throws IOException {
         DataFrameCodeExtractor extractor = new DataFrameCodeExtractor();

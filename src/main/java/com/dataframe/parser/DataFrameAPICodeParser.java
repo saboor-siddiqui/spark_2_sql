@@ -11,6 +11,14 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class DataFrameAPICodeParser {
+    private static final String TABLE_PREFIX = "axp-lumid.dw_anon.";
+
+    // Add new patterns
+    private static final Pattern WITH_COLUMN_PATTERN = 
+        Pattern.compile("\\.withColumn\\(\"(.*?)\",\\s*(.*?)\\)");
+    private static final Pattern WITH_COLUMN_RENAMED_PATTERN = 
+        Pattern.compile("\\.withColumnRenamed\\(\"(.*?)\",\\s*\"(.*?)\"\\)");
+
     public DataFrameNode parse(String dataframeCode) {
         // 1) Remove any "val something = " prefix
         dataframeCode = dataframeCode.replaceAll("val\\s+\\S+\\s*=\\s*", "");
@@ -96,11 +104,12 @@ public class DataFrameAPICodeParser {
             Pattern joinPattern = Pattern.compile("\\.join\\(\"(.*?)\",\\s*\"(.*?)\"(,\\s*\"(.*?)\")?\\)");
             Matcher matcher = joinPattern.matcher(dataframeCode);
             while (matcher.find()) {
-                String joinTable = matcher.group(1);
+                String joinTable = TABLE_PREFIX + matcher.group(1);
                 String joinCondition = matcher.group(2);
                 String joinType = matcher.group(4) != null ? matcher.group(4).toUpperCase() : "INNER";
 
-                Map<String, Object> joinOp = createOperation("join", "table", joinTable);
+                Map<String, Object> joinOp = new HashMap<>();
+                joinOp.put("table", joinTable);
                 joinOp.put("condition", joinCondition);
                 joinOp.put("joinType", joinType);
                 currentNode = new DataFrameNode("join", joinOp, currentNode);
@@ -134,6 +143,32 @@ public class DataFrameAPICodeParser {
             }
         }
 
+        // Handle .withColumn(...)
+        if (dataframeCode.matches(".*\\.withColumn\\(.*\\).*")) {
+            Matcher matcher = WITH_COLUMN_PATTERN.matcher(dataframeCode);
+            while (matcher.find()) {
+                String newColumnName = matcher.group(1);
+                String expression = matcher.group(2);
+                Map<String, Object> withColumnOp = new HashMap<>();
+                withColumnOp.put("newColumn", newColumnName);
+                withColumnOp.put("expression", expression);
+                currentNode = new DataFrameNode("withColumn", withColumnOp, currentNode);
+            }
+        }
+
+        // Handle .withColumnRenamed(...)
+        if (dataframeCode.matches(".*\\.withColumnRenamed\\(.*\\).*")) {
+            Matcher matcher = WITH_COLUMN_RENAMED_PATTERN.matcher(dataframeCode);
+            while (matcher.find()) {
+                String existingColumn = matcher.group(1);
+                String newColumnName = matcher.group(2);
+                Map<String, Object> renameOp = new HashMap<>();
+                renameOp.put("oldColumn", existingColumn);
+                renameOp.put("newColumn", newColumnName);
+                currentNode = new DataFrameNode("withColumnRenamed", renameOp, currentNode);
+            }
+        }
+
         return root;
     }
 
@@ -151,12 +186,13 @@ public class DataFrameAPICodeParser {
 
     // Extract aggregator calls like sum("amount").as("total_sales")
     private String extractAgg(String code) {
-        Pattern p = Pattern.compile("\\.agg\\(sum\\(\"(.*?)\"\\)\\.as\\(\"(.*?)\"\\)\\)");
+        Pattern p = Pattern.compile("\\.agg\\((\\w+)\\(\"(.*?)\"\\)\\.as\\(\"(.*?)\"\\)\\)");
         Matcher m = p.matcher(code);
         if (m.find()) {
-            String column = m.group(1);
-            String alias = m.group(2);
-            return String.format("sum(%s) as %s", column, alias);
+            String aggFunction = m.group(1);    // sum, count, etc.
+            String column = m.group(2);         // column name
+            String alias = m.group(3);          // alias name
+            return String.format("%s(%s) as %s", aggFunction, column, alias);
         }
         return "";
     }
@@ -171,18 +207,25 @@ public class DataFrameAPICodeParser {
         return Collections.emptyList();
     }
 
-    private String extractTableName(String code) {
-        // Very basic approach: get the first column's prefix as table name
-        // For example: "sales.date" → "sales"
-        // You can improve this logic as needed
-        Pattern p = Pattern.compile("\\.select\\(\"(.*?)\"\\)");
-        Matcher m = p.matcher(code);
-        if (m.find()) {
-            String firstCol = m.group(1);
+    public String extractTableName(String code) {
+        // First try to extract table name from spark.read.table("tablename")
+        Pattern tablePattern = Pattern.compile("\\.read\\.table\\(\"(.*?)\"\\)");
+        Matcher tableMatcher = tablePattern.matcher(code);
+        if (tableMatcher.find()) {
+            String tableName = tableMatcher.group(1);
+            return TABLE_PREFIX + tableName;
+        }
+
+        // Fallback: try to get table name from column prefix
+        Pattern selectPattern = Pattern.compile("\\.select\\(\"(.*?)\"\\)");
+        Matcher selectMatcher = selectPattern.matcher(code);
+        if (selectMatcher.find()) {
+            String firstCol = selectMatcher.group(1);
             if (firstCol.contains(".")) {
-                return firstCol.split("\\.")[0];
+                return TABLE_PREFIX + firstCol.split("\\.")[0];
             }
         }
+
         return "";
     }
 
@@ -206,18 +249,20 @@ public class DataFrameAPICodeParser {
 
     private Map<String, Object> createOperation(String type, String key, Object value) {
         Map<String, Object> op = new HashMap<>();
-        if ("select".equals(type)) {
+        if ("join".equals(type)) {
+            // Add prefix to join table names
+            String tableName = (String) value;
+            op.put(key, TABLE_PREFIX + tableName);
+        } else if ("select".equals(type)) {
             List<String> columns = (List<String>) value;
             columns = columns.stream()
                 .map(col -> col.replaceAll("\"", ""))
                 .collect(Collectors.toList());
             op.put(key, columns);
-        } else if ("orderBy".equals(type)) {
-            List<String> columns = (List<String>) value;
-            columns = columns.stream()
-                .map(col -> col.replaceAll("desc\\(\"(.*?)\"\\)", "$1 desc"))
-                .collect(Collectors.toList());
-            op.put(key, columns);
+        } else if ("from".equals(type)) {
+            // Add prefix to from table names
+            String tableName = (String) value;
+            op.put(key, TABLE_PREFIX + tableName);
         } else {
             op.put(key, value);
         }
