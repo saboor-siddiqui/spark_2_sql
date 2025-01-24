@@ -97,7 +97,7 @@ public class DataFrameCodeExtractor {
     public static void main(String[] args) throws IOException {
         DataFrameCodeExtractor extractor = new DataFrameCodeExtractor();
         String inputFilePath = "/Users/saboor/Documents/Projects/Codes/Spark2SQL/SparkDataFrameExample.scala";
-        String outputFilePath = "/Users/saboor/Documents/Projects/Codes/Spark2SQL/generated_queries.sql";
+        String outputFilePath = "/Users/saboor/Documents/Projects/Codes/Spark2SQL/SQL_Output.sql";
         
         // Create output directory if it doesn't exist
         File outputFile = new File(outputFilePath);
