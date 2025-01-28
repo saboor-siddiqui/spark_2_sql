@@ -12,23 +12,41 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.dataframe.parser.DataFrameAPICodeParser;
 import com.dataframe.parser.DataFrameNode;
 
 public class DataFrameCodeExtractor {
     private final DataFrameAPICodeParser parser;
     private final DataFrameToSQLConverter converter;
-
+    private static final Logger logger = LoggerFactory.getLogger(DataFrameCodeExtractor.class);
     public DataFrameCodeExtractor() {
         this.parser = new DataFrameAPICodeParser();
         this.converter = new DataFrameToSQLConverter();
     }
 
     public List<String> processFile(String filePath) throws IOException {
+        logger.info("Processing file: {}", filePath);
+        if (filePath == null || filePath.trim().isEmpty()) {
+            throw new IllegalArgumentException("File path cannot be null or empty");
+        }
+        
+        if (!Files.exists(Paths.get(filePath))) {
+            throw new IOException("File does not exist: " + filePath);
+        }
+        
         String content = new String(Files.readAllBytes(Paths.get(filePath)));
-        System.out.println("File content read: " + content);
+        if (content.trim().isEmpty()) {
+            throw new IOException("File is empty: " + filePath);
+        }
+        
+        logger.debug("File content read: {}", content);
         List<String> operations = extractDataFrameOperations(content);
-        System.out.println("Extracted operations: " + operations);
+        if (operations.isEmpty()) {
+            System.out.println("Warning: No DataFrame operations found in file");
+        }
         return convertOperationsToSQL(operations);
     }
 

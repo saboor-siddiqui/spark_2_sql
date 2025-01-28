@@ -10,21 +10,46 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+/**
+ * Parser for converting Spark DataFrame operations to SQL equivalent nodes.
+ * This class handles the parsing of various DataFrame operations including:
+ * - Basic operations (select, filter, limit)
+ * - Aggregations (groupBy, count, agg)
+ * - Joins
+ * - Column operations (withColumn, withColumnRenamed)
+ */
 public class DataFrameAPICodeParser {
+    /** Prefix for all table names in the target database */
     private static final String TABLE_PREFIX = "axp-lumid.dw_anon.";
 
-    // Add new patterns
+    /** Regular expression patterns for matching DataFrame operations */
     private static final Pattern WITH_COLUMN_PATTERN = 
         Pattern.compile("\\.withColumn\\(\"(.*?)\",\\s*(.*?)\\)");
     private static final Pattern WITH_COLUMN_RENAMED_PATTERN = 
         Pattern.compile("\\.withColumnRenamed\\(\"(.*?)\",\\s*\"(.*?)\"\\)");
-
+    private static final Pattern SELECT_PATTERN = 
+        Pattern.compile("\\.select\\(\"(.*?)\"\\)");
+    private static final Pattern FILTER_PATTERN = 
+        Pattern.compile("\\.(filter|where)\\(\"(.*?)\"\\)");
+    private static final Pattern JOIN_PATTERN = 
+        Pattern.compile("\\.join\\(\"(.*?)\",\\s*\"(.*?)\"(,\\s*\"(.*?)\")?\\)");
+    private static final Pattern GROUP_BY_PATTERN = 
+        Pattern.compile("\\.groupBy\\(\"(.*?)\"\\)");
+    private static final Pattern ORDER_BY_PATTERN = 
+        Pattern.compile("\\.orderBy\\((desc\\(\"(.*?)\"\\)|\"(.*?)\"(\\s+(?:ASC|DESC))?)\\)");
+    private static final Pattern AGG_PATTERN = 
+        Pattern.compile("\\.agg\\((\\w+)\\(\"(.*?)\"\\)\\.as\\(\"(.*?)\"\\)\\)");
+    private static final Pattern LIMIT_PATTERN = 
+        Pattern.compile("\\.limit\\((\\d+)\\)");
+    private static final Pattern TABLE_PATTERN = 
+        Pattern.compile("\\.read\\.table\\(\"(.*?)\"\\)");
+    
     public DataFrameNode parse(String dataframeCode) {
-        // 1) Remove any "val something = " prefix
-        dataframeCode = dataframeCode.replaceAll("val\\s+\\S+\\s*=\\s*", "");
-
-        // 2) Normalize whitespace and newlines
-        dataframeCode = dataframeCode.replaceAll("\\s+", " ").trim();
+        // Normalize input by removing variable assignments and extra whitespace
+        // Remove variable assignments and normalize whitespace
+        dataframeCode = dataframeCode.replaceAll("\\s*=\\s*", "")
+                                    .replaceAll("\\s+", " ")
+                                    .trim();
 
         DataFrameNode root = null;
         DataFrameNode currentNode = null;
@@ -101,17 +126,12 @@ public class DataFrameAPICodeParser {
 
         // Handle .join("table", "condition", optional joinType)
         if (dataframeCode.matches(".*\\.join\\(\".*?\",\\s*\".*?\".*\\).*")) {
-            Pattern joinPattern = Pattern.compile("\\.join\\(\"(.*?)\",\\s*\"(.*?)\"(,\\s*\"(.*?)\")?\\)");
-            Matcher matcher = joinPattern.matcher(dataframeCode);
+            Matcher matcher = JOIN_PATTERN.matcher(dataframeCode);
             while (matcher.find()) {
-                String joinTable = TABLE_PREFIX + matcher.group(1);
-                String joinCondition = matcher.group(2);
-                String joinType = matcher.group(4) != null ? matcher.group(4).toUpperCase() : "INNER";
-
                 Map<String, Object> joinOp = new HashMap<>();
-                joinOp.put("table", joinTable);
-                joinOp.put("condition", joinCondition);
-                joinOp.put("joinType", joinType);
+                joinOp.put("table", TABLE_PREFIX + matcher.group(1));
+                joinOp.put("condition", matcher.group(2));
+                joinOp.put("joinType", matcher.group(4) != null ? matcher.group(4).toUpperCase() : "INNER");
                 currentNode = new DataFrameNode("join", joinOp, currentNode);
             }
         }
@@ -173,111 +193,99 @@ public class DataFrameAPICodeParser {
     }
 
     private List<String> extractColumns(String code, String operation) {
-        Pattern pattern = Pattern.compile("\\." + operation + "\\((.*?)\\)");
+        Pattern pattern = operation.equals("select") ? SELECT_PATTERN : GROUP_BY_PATTERN;
         Matcher matcher = pattern.matcher(code);
         if (matcher.find()) {
             String cols = matcher.group(1);
-            // Remove surrounding quotes, split on commas
             cols = cols.replaceAll("\"", "");
             return Arrays.asList(cols.split(",\\s*"));
         }
         return Collections.emptyList();
     }
 
-    // Extract aggregator calls like sum("amount").as("total_sales")
     private String extractAgg(String code) {
-        Pattern p = Pattern.compile("\\.agg\\((\\w+)\\(\"(.*?)\"\\)\\.as\\(\"(.*?)\"\\)\\)");
-        Matcher m = p.matcher(code);
+        Matcher m = AGG_PATTERN.matcher(code);
         if (m.find()) {
-            String aggFunction = m.group(1);    // sum, count, etc.
-            String column = m.group(2);         // column name
-            String alias = m.group(3);          // alias name
+            String aggFunction = m.group(1);
+            String column = m.group(2);
+            String alias = m.group(3);
             return String.format("%s(%s) as %s", aggFunction, column, alias);
         }
         return "";
     }
 
     private List<String> extractOrderByColumns(String code) {
-        Pattern pattern = Pattern.compile("\\.orderBy\\(desc\\(\"(.*?)\"\\)\\)");
-        Matcher matcher = pattern.matcher(code);
+        Matcher matcher = ORDER_BY_PATTERN.matcher(code);
         if (matcher.find()) {
-            String column = matcher.group(1);
-            return Arrays.asList(column + " desc");
+            if (matcher.group(1) != null) {
+                // Handle desc(...) case
+                return Arrays.asList(matcher.group(2) + " DESC");
+            } else {
+                // Handle direct column name with optional ASC/DESC
+                String column = matcher.group(3);
+                String direction = matcher.group(4) != null ? matcher.group(4).trim() : "";
+                return Arrays.asList(column + direction);
+            }
         }
         return Collections.emptyList();
     }
 
     public String extractTableName(String code) {
-        // First try to extract table name from spark.read.table("tablename")
-        Pattern tablePattern = Pattern.compile("\\.read\\.table\\(\"(.*?)\"\\)");
-        Matcher tableMatcher = tablePattern.matcher(code);
+        Matcher tableMatcher = TABLE_PATTERN.matcher(code);
         if (tableMatcher.find()) {
-            String tableName = tableMatcher.group(1);
-            return TABLE_PREFIX + tableName;
+            return TABLE_PREFIX + tableMatcher.group(1);
         }
 
-        // Fallback: try to get table name from column prefix
-        Pattern selectPattern = Pattern.compile("\\.select\\(\"(.*?)\"\\)");
-        Matcher selectMatcher = selectPattern.matcher(code);
+        Matcher selectMatcher = SELECT_PATTERN.matcher(code);
         if (selectMatcher.find()) {
             String firstCol = selectMatcher.group(1);
             if (firstCol.contains(".")) {
                 return TABLE_PREFIX + firstCol.split("\\.")[0];
             }
         }
-
         return "";
     }
 
-    private String extractCondition(String code, String operation) {
-        Pattern pattern = Pattern.compile("\\." + operation + "\\(\"(.*?)\"\\)");
-        Matcher matcher = pattern.matcher(code);
+    private String extractFilterCondition(String code) {
+        Matcher matcher = FILTER_PATTERN.matcher(code);
         if (matcher.find()) {
-            return matcher.group(1);
+            String condition = matcher.group(2);
+            return condition.replaceAll("^\"|\"$", "").trim();
         }
-        return "";
+        return null;
     }
 
     private int extractLimit(String code) {
-        Pattern pattern = Pattern.compile("\\.limit\\((\\d+)\\)");
-        Matcher matcher = pattern.matcher(code);
+        Matcher matcher = LIMIT_PATTERN.matcher(code);
         if (matcher.find()) {
             return Integer.parseInt(matcher.group(1));
         }
         return 0;
     }
 
+    /**
+     * Creates an operation map with the specified parameters
+     * @param type Operation type (from, select, join, etc.)
+     * @param key Key for the operation's value
+     * @param value Value for the operation
+     * @return Map containing the operation details
+     */
     private Map<String, Object> createOperation(String type, String key, Object value) {
         Map<String, Object> op = new HashMap<>();
-        if ("join".equals(type)) {
-            // Add prefix to join table names
-            String tableName = (String) value;
-            op.put(key, TABLE_PREFIX + tableName);
-        } else if ("select".equals(type)) {
-            List<String> columns = (List<String>) value;
-            columns = columns.stream()
-                .map(col -> col.replaceAll("\"", ""))
-                .collect(Collectors.toList());
-            op.put(key, columns);
-        } else if ("from".equals(type)) {
-            // Add prefix to from table names
-            String tableName = (String) value;
-            op.put(key, TABLE_PREFIX + tableName);
-        } else {
-            op.put(key, value);
+        switch (type) {
+            case "join":
+            case "from":
+                op.put(key, TABLE_PREFIX + (String) value);
+                break;
+            case "select":
+                List<String> columns = (List<String>) value;
+                op.put(key, columns.stream()
+                    .map(col -> col.replaceAll("\"", ""))
+                    .collect(Collectors.toList()));
+                break;
+            default:
+                op.put(key, value);
         }
         return op;
-    }
-
-    private String extractFilterCondition(String code) {
-        Pattern pattern = Pattern.compile("\\.(filter|where)\\(\"(.*?)\"\\)");
-        Matcher matcher = pattern.matcher(code);
-        if (matcher.find()) {
-            // Get the actual filter condition from group 2
-            String condition = matcher.group(2);
-            // Clean up the condition
-            return condition.replaceAll("^\"|\"$", "").trim();
-        }
-        return null;
     }
 }
