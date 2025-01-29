@@ -218,10 +218,11 @@ public class DataFrameToSQLConverter {
         @Override
         public String toString() {
             String joinTypeStr = joinType.toUpperCase();
-            if (joinTypeStr.equals("LEFT") || joinTypeStr.equals("RIGHT")) {
-                joinTypeStr += " OUTER";
+            if (joinTypeStr.equals("INNER JOIN")) {
+                joinTypeStr = "INNER"; 
             }
-            return String.format("%s JOIN `%s` ON %s", joinTypeStr, table, condition);
+            // Remove backticks around joined table name
+            return String.format("%s JOIN %s ON %s", joinTypeStr, table, condition);
         }
 
         @Override
