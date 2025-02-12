@@ -10,6 +10,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Parser for converting Spark DataFrame operations to SQL equivalent nodes.
  * This class handles the parsing of various DataFrame operations including:
@@ -22,6 +25,8 @@ public class DataFrameAPICodeParser {
     /** Prefix for all table names in the target database */
     private static final String TABLE_PREFIX = "axp-lumid.dw_anon.";
 
+    private static final Logger logger = LoggerFactory.getLogger(DataFrameAPICodeParser.class);
+
     /** Regular expression patterns for matching DataFrame operations */
     private static final Pattern WITH_COLUMN_PATTERN = 
         Pattern.compile("\\.withColumn\\(\"(.*?)\",\\s*(.*?)\\)");
@@ -31,8 +36,10 @@ public class DataFrameAPICodeParser {
         Pattern.compile("\\.select\\(\"(.*?)\"\\)");
     private static final Pattern FILTER_PATTERN = 
         Pattern.compile("\\.(filter|where)\\(\"(.*?)\"\\)");
+    // Update the JOIN_PATTERN to better handle the table and column references
     private static final Pattern JOIN_PATTERN = 
-        Pattern.compile("\\.join\\(\"(.*?)\",\\s*\"(.*?)\"(,\\s*\"(.*?)\")?\\)");
+        Pattern.compile("\\.join\\(\"(.*?)\",\\s*\"([^\"]+?)\\s*=\\s*([^\"]+?)\"(,\\s*\"(.*?)\")?\\)");
+
     private static final Pattern GROUP_BY_PATTERN = 
         Pattern.compile("\\.groupBy\\(\"(.*?)\"\\)");
     private static final Pattern ORDER_BY_PATTERN = 
@@ -46,11 +53,10 @@ public class DataFrameAPICodeParser {
     
     public DataFrameNode parse(String dataframeCode) {
         // Normalize input by removing variable assignments and extra whitespace
-        // Remove variable assignments and normalize whitespace
-        dataframeCode = dataframeCode.replaceAll("\\s*=\\s*", "")
-                                    .replaceAll("\\s+", " ")
+        dataframeCode = dataframeCode.replaceAll("val\\s+\\w+\\s*=\\s*", "") // Remove only variable assignments
+                                    .replaceAll("\\s+", " ")                   // Normalize whitespace
                                     .trim();
-
+    
         DataFrameNode root = null;
         DataFrameNode currentNode = null;
 
@@ -127,11 +133,22 @@ public class DataFrameAPICodeParser {
         // Handle .join("table", "condition", optional joinType)
         if (dataframeCode.matches(".*\\.join\\(\".*?\",\\s*\".*?\".*\\).*")) {
             Matcher matcher = JOIN_PATTERN.matcher(dataframeCode);
-            while (matcher.find()) {
+            
+            if (matcher.find()) {
                 Map<String, Object> joinOp = new HashMap<>();
-                joinOp.put("table", TABLE_PREFIX + matcher.group(1));
-                joinOp.put("condition", matcher.group(2));
-                joinOp.put("joinType", matcher.group(4) != null ? matcher.group(4).toUpperCase() : "INNER");
+                String joinTable = matcher.group(1);
+                
+                // Extract left and right parts of the join condition
+                String leftPart = matcher.group(2).trim();
+                String rightPart = matcher.group(3).trim();
+                String joinCondition = leftPart + " = " + rightPart;
+                
+                // Clean up the join condition
+                joinCondition = joinCondition.replaceAll("\\s+", " ").trim();
+                
+                joinOp.put("table", TABLE_PREFIX + joinTable);
+                joinOp.put("condition", joinCondition);
+                joinOp.put("joinType", matcher.group(5) != null ? matcher.group(5).toUpperCase() : "INNER");
                 currentNode = new DataFrameNode("join", joinOp, currentNode);
             }
         }

@@ -21,7 +21,7 @@ object SparkDataFrameExample {
       .agg(count("cm11").as("total_customers"))
       .orderBy(desc("total_customers"))
 
-      val cms_campaign_info_avg = spark.read.table("cms_campaign_info").select("mbr_key", "abr_id", "aud_creat_ts", "strt_ts", "mkt_cd","key_type","cm13","roi_cutoff"")
+      val cms_campaign_info_avg = spark.read.table("cms_campaign_info").select("mbr_key", "abr_id", "aud_creat_ts", "strt_ts", "mkt_cd","key_type","cm13","roi_cutoff")
       .join("csp_model_score_cm11", "cms_campaign_info.cm13 = csp_model_score_cm11.cm13")
       .groupBy("cm11,mbr_key,mkt_cd")
       .agg(avg("roi_cutoff").as("avg_roi_cutoff"))
