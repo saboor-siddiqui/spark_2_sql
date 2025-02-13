@@ -53,30 +53,48 @@ public class DataFrameCodeExtractor {
     private List<String> extractDataFrameOperations(String content) {
         List<String> operations = new ArrayList<>();
         
-        // 1. First normalize the content to handle multi-line statements
-        content = content.replaceAll("//.*?\\n", "\n")  // Remove single-line comments
-                        .replaceAll("/\\*.*?\\*/", "")   // Remove multi-line comments
-                        .replaceAll("(?m)^\\s+", "")     // Remove leading whitespace
+        // Clean up the content
+        content = content.replaceAll("//.*?\\n", "\n")
+                        .replaceAll("/\\*.*?\\*/", "")
+                        .replaceAll("(?m)^\\s+", "")
                         .trim();
         
-        // 2. Updated regex pattern to capture complete DataFrame chains
-        Pattern pattern = Pattern.compile(
+        // Add pattern for method-style DataFrame definitions
+        Pattern methodPattern = Pattern.compile(
+            "def\\s+(\\w+)\\s*:\\s*DataFrame\\s*=\\s*\\{([^}]+)\\}",
+            Pattern.MULTILINE | Pattern.DOTALL
+        );
+        
+        // Extract method-style operations
+        Matcher methodMatcher = methodPattern.matcher(content);
+        while (methodMatcher.find()) {
+            String methodBody = methodMatcher.group(2).trim();
+            // Clean up the method body
+            String cleanedOperation = methodBody
+                .replaceAll("\\s*\\.\\s*", ".")
+                .replaceAll("(?m)^\\s+", "")
+                .replaceAll("\\n\\s*", "")
+                .replaceAll("\\s+", " ")
+                .trim();
+            
+            operations.add(cleanedOperation);
+        }
+        
+        // Keep existing variable-style extraction
+        Pattern varPattern = Pattern.compile(
             "val\\s+(\\w+)\\s*=\\s*(\\w+)\\.((?:[^\\n]*?\\n?\\s*\\.?)*?)(?=\\s*val|\\s*$)",
             Pattern.MULTILINE | Pattern.DOTALL
         );
         
-        Matcher matcher = pattern.matcher(content);
-        while (matcher.find()) {
-            String dfVariable = matcher.group(2);
-            String operation = matcher.group(3);
-            
-            // 3. Clean up the operation string more thoroughly
+        Matcher varMatcher = varPattern.matcher(content);
+        while (varMatcher.find()) {
+            String dfVariable = varMatcher.group(2);
+            String operation = varMatcher.group(3);
             String cleanedOperation = operation
                 .replaceAll("\\s*\\.\\s*", ".")
                 .replaceAll("(?m)^\\s+", "")
                 .replaceAll("\\n\\s*", "")
                 .replaceAll("\\s+", " ")
-                .replaceAll("\\s*=\\s*", "=")
                 .trim();
             
             operations.add(dfVariable + "." + cleanedOperation);
@@ -85,9 +103,34 @@ public class DataFrameCodeExtractor {
         return operations;
     }
 
+    private String normalizeSparkCode(String operation) {
+        // Handle readCS3Data calls
+        operation = operation.replaceAll(
+            "readCS3Data\\s*\\([^,]+,\\s*\"([^\"]+)\",\\s*\"([^\"]+)\"",
+            "spark.read.table(\"$1.$2\""
+        );
+        
+        // Handle column expressions
+        operation = operation.replaceAll("col\\(\"([^\"]+)\"\\)", "$1")
+                            .replaceAll("===", "=")
+                            .replaceAll("\\.isNotNull", " IS NOT NULL")
+                            .replaceAll("trim\\(([^)]+)\\)", "TRIM($1)");
+        
+        // Handle date functions
+        operation = operation.replaceAll(
+            "date_trunc\\(\"([^\"]+)\",\\s*([^)]+)\\)",
+            "DATE_TRUNC('$1', $2)"
+        );
+        
+        return operation;
+    }
+
     private List<String> convertOperationsToSQL(List<String> operations) {
         List<String> sqlQueries = new ArrayList<>();
         for (String operation : operations) {
+            // Normalize the Spark code before parsing
+            operation = normalizeSparkCode(operation);
+            System.out.println("Normalized Operation: " + operation);
             DataFrameNode parsedNode = parser.parse(operation);
             if (parsedNode != null) {
                 String tableName = parser.extractTableName(operation);
