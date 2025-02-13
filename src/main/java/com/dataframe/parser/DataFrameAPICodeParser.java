@@ -45,7 +45,9 @@ public class DataFrameAPICodeParser {
     private static final Pattern ORDER_BY_PATTERN = 
         Pattern.compile("\\.orderBy\\((desc\\(\"(.*?)\"\\)|\"(.*?)\"(\\s+(?:ASC|DESC))?)\\)");
     private static final Pattern AGG_PATTERN = 
-        Pattern.compile("\\.agg\\((\\w+)\\(\"(.*?)\"\\)\\.as\\(\"(.*?)\"\\)\\)");
+        Pattern.compile("\\.agg\\((.+?)\\)(?=\\.|$)");
+    private static final Pattern INDIVIDUAL_AGG_PATTERN = 
+        Pattern.compile("(\\w+)\\(([^\\)]+)\\)(?:\\.as\\(\"([^\"]+)\"\\)|\\s+as\\s+(\\w+))");
     private static final Pattern LIMIT_PATTERN = 
         Pattern.compile("\\.limit\\((\\d+)\\)");
     private static final Pattern TABLE_PATTERN = 
@@ -220,16 +222,33 @@ public class DataFrameAPICodeParser {
         return Collections.emptyList();
     }
 
-    private String extractAgg(String code) {
-        Matcher m = AGG_PATTERN.matcher(code);
-        if (m.find()) {
-            String aggFunction = m.group(1);
-            String column = m.group(2);
-            String alias = m.group(3);
-            return String.format("%s(%s) as %s", aggFunction, column, alias);
+    public String extractAgg(String code) {
+        List<String> aggregations = new ArrayList<>();
+        Matcher aggMatcher = AGG_PATTERN.matcher(code);
+        if (aggMatcher.find()) {
+            String aggContent = aggMatcher.group(1);
+            System.out.println("aggContent: " + aggContent);
+            String[] individualAggs = aggContent.split(",\\s*(?=\\w+\\()");
+            System.out.println("individualAggs: " + Arrays.toString(individualAggs));
+            for (String agg : individualAggs) {
+                agg = agg.trim();
+                Matcher individualMatcher = INDIVIDUAL_AGG_PATTERN.matcher(agg);
+                boolean matchFound = individualMatcher.find(); // Store the result of find()
+                System.out.println("individualMatcher: " + matchFound);
+                if (matchFound) { // Use the stored result
+                    String function = individualMatcher.group(1).toUpperCase();
+                    String column = individualMatcher.group(2);
+                    String alias = individualMatcher.group(3) != null ? individualMatcher.group(3) : individualMatcher.group(4);
+                    String aggregation = String.format("%s(%s) as %s", function, column, alias);
+                    aggregations.add(aggregation);
+                } else {
+                    System.out.println("ERROR: Failed to parse aggregation: " + agg);
+                }
+            }
         }
-        return "";
+        return String.join(", ", aggregations);
     }
+
 
     private List<String> extractOrderByColumns(String code) {
         Matcher matcher = ORDER_BY_PATTERN.matcher(code);

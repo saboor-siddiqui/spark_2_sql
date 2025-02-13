@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import com.dataframe.parser.DataFrameAPICodeParser;
 import com.dataframe.parser.DataFrameNode;
@@ -172,21 +173,31 @@ public class DataFrameToSQLConverter {
             sqlQuery.append("DISTINCT ");
         }
         
-        if (windowFunctionClause != null) {
-            selectColumns.add(windowFunctionClause);
+        // Remove trailing commas and clean up the select columns
+        List<String> cleanedColumns = selectColumns.stream()
+            .map(String::trim)
+            .filter(col -> !col.isEmpty())
+            .collect(Collectors.toList());
+        
+        sqlQuery.append(String.join(", ", cleanedColumns));
+        sqlQuery.append(fromClause);
+        
+        // Clean up table name duplication
+        String sql = sqlQuery.toString().replaceAll(
+            "axp-lumid\\.dw_anon\\.axp-lumid\\.dw_anon",
+            "axp-lumid.dw_anon"
+        );
+        sqlQuery.setLength(0);
+        sqlQuery.append(sql);
+        
+        if (!whereClauses.isEmpty()) {
+            // Clean up logical operators
+            String whereClause = String.join(" AND ", whereClauses)
+                .replaceAll("&&", "AND")
+                .replaceAll("\\|\\|", "OR");
+            sqlQuery.append(" WHERE ").append(whereClause);
         }
         
-        sqlQuery.append(String.join(", ", selectColumns));
-        sqlQuery.append(fromClause);
-
-        for (Join join : joins) {
-            sqlQuery.append(" ").append(join);
-        }
-
-        if (!whereClauses.isEmpty()) {
-            sqlQuery.append(" WHERE ").append(String.join(" AND ", whereClauses));
-        }
-
         if (groupByClause != null) {
             sqlQuery.append(" GROUP BY ").append(groupByClause);
         }

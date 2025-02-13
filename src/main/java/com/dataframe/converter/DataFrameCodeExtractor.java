@@ -59,9 +59,9 @@ public class DataFrameCodeExtractor {
                         .replaceAll("(?m)^\\s+", "")
                         .trim();
         
-        // Add pattern for method-style DataFrame definitions
+        // Updated pattern to handle multi-line method definitions with new agg syntax
         Pattern methodPattern = Pattern.compile(
-            "def\\s+(\\w+)\\s*:\\s*DataFrame\\s*=\\s*\\{([^}]+)\\}",
+            "def\\s+(\\w+)\\s*:\\s*DataFrame\\s*=\\s*\\{([^}]+?)\\s*\\}",
             Pattern.MULTILINE | Pattern.DOTALL
         );
         
@@ -69,12 +69,13 @@ public class DataFrameCodeExtractor {
         Matcher methodMatcher = methodPattern.matcher(content);
         while (methodMatcher.find()) {
             String methodBody = methodMatcher.group(2).trim();
-            // Clean up the method body
+            // Clean up the method body while preserving agg expressions
             String cleanedOperation = methodBody
-                .replaceAll("\\s*\\.\\s*", ".")
-                .replaceAll("(?m)^\\s+", "")
-                .replaceAll("\\n\\s*", "")
-                .replaceAll("\\s+", " ")
+                .replaceAll("\\s*\\.\\s*", ".")  // Clean up dots
+                .replaceAll("(?m)^\\s+", "")     // Remove leading spaces
+                .replaceAll("\\n\\s*", " ")      // Convert newlines to spaces
+                .replaceAll("\\s+", " ")         // Normalize spaces
+                .replaceAll("\\s*,\\s*", ", ")   // Clean up commas
                 .trim();
             
             operations.add(cleanedOperation);
@@ -106,8 +107,8 @@ public class DataFrameCodeExtractor {
     private String normalizeSparkCode(String operation) {
         // Handle readCS3Data calls
         operation = operation.replaceAll(
-            "readCS3Data\\s*\\([^,]+,\\s*\"([^\"]+)\",\\s*\"([^\"]+)\"",
-            "spark.read.table(\"$1.$2\""
+            "readCS3Data\\s*\\([^,]+,\\s*\"([^\"]+)\",\\s*\"([^\"]+)\"\\)",
+            "spark.read.table(\"$1.$2\")"
         );
         
         // Handle column expressions
@@ -115,6 +116,12 @@ public class DataFrameCodeExtractor {
                             .replaceAll("===", "=")
                             .replaceAll("\\.isNotNull", " IS NOT NULL")
                             .replaceAll("trim\\(([^)]+)\\)", "TRIM($1)");
+        
+        // Handle aggregations with 'as' keyword
+        operation = operation.replaceAll(
+            "(\\w+)\\(\"([^\"]+)\"\\)\\s+as\\s+\"([^\"]+)\"",
+            "$1($2) as $3"
+        );
         
         // Handle date functions
         operation = operation.replaceAll(
