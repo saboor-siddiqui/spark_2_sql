@@ -28,7 +28,7 @@ public class DataFrameToSQLConverter {
         this.sqlQuery = new StringBuilder();
         this.selectColumns = new ArrayList<>();
         this.joins = new HashSet<>();
-        this.whereClauses = new HashSet<>(); // Changed to HashSet
+        this.whereClauses = new HashSet<>();
         this.isDistinct = false;
     }
 
@@ -99,7 +99,6 @@ public class DataFrameToSQLConverter {
                 isDistinct = true;
                 break;
             case "from":
-                // Skip from node as table name is provided separately
                 break;
             case "withColumn":
                 Map<String, Object> details = node.getDetails();

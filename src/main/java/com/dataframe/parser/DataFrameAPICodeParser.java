@@ -10,9 +10,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * Parser for converting Spark DataFrame operations to SQL equivalent nodes.
  * This class handles the parsing of various DataFrame operations including:
@@ -24,8 +21,6 @@ import org.slf4j.LoggerFactory;
 public class DataFrameAPICodeParser {
     /** Prefix for all table names in the target database */
     private static final String TABLE_PREFIX = "axp-lumid.dw_anon.";
-
-    private static final Logger logger = LoggerFactory.getLogger(DataFrameAPICodeParser.class);
 
     /** Regular expression patterns for matching DataFrame operations */
     private static final Pattern WITH_COLUMN_PATTERN = 
